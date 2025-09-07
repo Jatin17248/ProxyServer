@@ -100,8 +100,6 @@
 //   await logPublicIP();
 // });
 
-
-
 // // server.js
 // import express from "express";
 // import http from "http";
@@ -129,23 +127,23 @@
 // app.get("/test-npf", async (req, res) => {
 //   try {
 //     console.log("🧪 Testing direct NPF API call...");
-    
+
 //     const headers = {
 //       'access-key': process.env.NPF_ACCESS_KEY || '',
 //       'secret-key': process.env.NPF_SECRET_KEY || '',
 //       'Content-Type': 'application/json',
 //       'User-Agent': 'NPF-Proxy-Test/1.0'
 //     };
-    
+
 //     console.log("🧪 Sending headers:", headers);
-    
+
 //     const response = await fetch(`${TARGET_ORIGIN}/lead`, {
 //       method: 'GET',
 //       headers: headers
 //     });
 
 //     const responseText = await response.text();
-    
+
 //     console.log("🧪 Direct NPF test result:", {
 //       status: response.status,
 //       statusText: response.statusText,
@@ -163,9 +161,9 @@
 //         hasSecretKey: !!process.env.NPF_SECRET_KEY,
 //         accessKeyLength: process.env.NPF_ACCESS_KEY?.length || 0,
 //         secretKeyLength: process.env.NPF_SECRET_KEY?.length || 0,
-//         accessKeyPreview: process.env.NPF_ACCESS_KEY ? 
+//         accessKeyPreview: process.env.NPF_ACCESS_KEY ?
 //           `${process.env.NPF_ACCESS_KEY.substring(0, 4)}...${process.env.NPF_ACCESS_KEY.substring(-4)}` : 'missing',
-//         secretKeyPreview: process.env.NPF_SECRET_KEY ? 
+//         secretKeyPreview: process.env.NPF_SECRET_KEY ?
 //           `${process.env.NPF_SECRET_KEY.substring(0, 4)}...${process.env.NPF_SECRET_KEY.substring(-4)}` : 'missing'
 //       }
 //     });
@@ -179,7 +177,7 @@
 // app.get("/test-proxy", async (req, res) => {
 //   try {
 //     console.log("🧪 Testing proxy functionality...");
-    
+
 //     // Make a request through the proxy to itself
 //     const proxyUrl = `http://localhost:${PORT}/lead`;
 //     const response = await fetch(proxyUrl, {
@@ -191,7 +189,7 @@
 //     });
 
 //     const responseText = await response.text();
-    
+
 //     console.log("🧪 Proxy test result:", {
 //       status: response.status,
 //       statusText: response.statusText,
@@ -328,9 +326,6 @@
 //   await logPublicIP();
 // });
 
-
- 
-
 // import express from "express";
 // import { createProxyMiddleware } from "http-proxy-middleware";
 
@@ -388,14 +383,17 @@
 //   console.log(`🚀 Proxy listening on :${PORT} → ${TARGET_ORIGIN}`);
 // });
 
-
-
 import express from "express";
 import { createProxyMiddleware } from "http-proxy-middleware";
+
+import axios from "axios";
+import https from "https";
 
 const PORT = process.env.PORT || 8080;
 const TARGET_ORIGIN = process.env.NPF_ORIGIN || "https://api.nopaperforms.io";
 const PROXY_KEY = process.env.PROXY_KEY;
+
+const ipv4Agent = new https.Agent({ family: 4 });
 
 if (!PROXY_KEY) {
   console.error("❌ PROXY_KEY is not set. Refusing to start.");
@@ -424,10 +422,10 @@ app.get("/debug-headers", async (req, res) => {
   });
 });
 
-
 // Security: require proxy key
 app.use((req, res, next) => {
   const key = req.get("x-proxy-key");
+  delete req.headers["cookie"]; // strip cookies entirely
   if (!key || key !== PROXY_KEY) {
     return res.status(403).json({ ok: false, error: "Forbidden" });
   }
@@ -481,17 +479,18 @@ app.post("/lead/v1/createOrUpdate", async (req, res) => {
           "secret-key": process.env.NPF_SECRET_KEY,
           "Content-Type": "application/json",
         },
+        httpsAgent: ipv4Agent,
       }
     );
 
     res.status(response.status).json(response.data);
   } catch (err) {
     console.error("Error from NPF:", err.response?.status, err.response?.data);
-    res.status(err.response?.status || 500).json(err.response?.data || { error: "Unknown error" });
+    res
+      .status(err.response?.status || 500)
+      .json(err.response?.data || { error: "Unknown error" });
   }
 });
-
-
 
 // Log egress IP
 async function logPublicIP() {
