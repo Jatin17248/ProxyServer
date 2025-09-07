@@ -125,6 +125,47 @@ const app = express();
 // Health check
 app.get("/healthz", (_req, res) => res.status(200).send("ok"));
 
+// Debug endpoint to test NPF credentials
+app.get("/test-npf", async (req, res) => {
+  try {
+    console.log("🧪 Testing direct NPF API call...");
+    
+    const response = await fetch(`${TARGET_ORIGIN}/lead`, {
+      method: 'GET',
+      headers: {
+        'access-key': process.env.NPF_ACCESS_KEY || '',
+        'secret-key': process.env.NPF_SECRET_KEY || '',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const responseText = await response.text();
+    
+    console.log("🧪 Direct NPF test result:", {
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: responseText
+    });
+
+    res.json({
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+      body: responseText,
+      credentials: {
+        hasAccessKey: !!process.env.NPF_ACCESS_KEY,
+        hasSecretKey: !!process.env.NPF_SECRET_KEY,
+        accessKeyLength: process.env.NPF_ACCESS_KEY?.length || 0,
+        secretKeyLength: process.env.NPF_SECRET_KEY?.length || 0
+      }
+    });
+  } catch (error) {
+    console.error("🧪 Direct NPF test failed:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Secret check
 app.use((req, res, next) => {
   const key = req.get("x-proxy-key");
@@ -157,7 +198,61 @@ app.use(
       return path.replace(/^\/+/, "/");
     },
     onProxyReq: (proxyReq, req, _res) => {
+      // Force Host header to target origin
       proxyReq.setHeader("host", new URL(TARGET_ORIGIN).host);
+
+      // Add NPF API credentials - try multiple header formats
+      if (process.env.NPF_ACCESS_KEY) {
+        proxyReq.setHeader("access-key", process.env.NPF_ACCESS_KEY);
+        proxyReq.setHeader("Access-Key", process.env.NPF_ACCESS_KEY);
+        proxyReq.setHeader("X-Access-Key", process.env.NPF_ACCESS_KEY);
+      }
+      if (process.env.NPF_SECRET_KEY) {
+        proxyReq.setHeader("secret-key", process.env.NPF_SECRET_KEY);
+        proxyReq.setHeader("Secret-Key", process.env.NPF_SECRET_KEY);
+        proxyReq.setHeader("X-Secret-Key", process.env.NPF_SECRET_KEY);
+      }
+
+      // Ensure JSON requests carry correct content-type
+      if (req.is("application/json")) {
+        proxyReq.setHeader("content-type", "application/json");
+      }
+
+      // Log ALL headers being sent to NPF for debugging
+      console.log("➡️ Proxying to NPF:", {
+        method: req.method,
+        url: req.url,
+        target: TARGET_ORIGIN,
+        allHeaders: proxyReq.getHeaders()
+      });
+
+      // Specifically log the credential headers
+      console.log("🔑 Credential Headers:", {
+        "access-key": proxyReq.getHeader("access-key") || "MISSING",
+        "Access-Key": proxyReq.getHeader("Access-Key") || "MISSING", 
+        "X-Access-Key": proxyReq.getHeader("X-Access-Key") || "MISSING",
+        "secret-key": proxyReq.getHeader("secret-key") || "MISSING",
+        "Secret-Key": proxyReq.getHeader("Secret-Key") || "MISSING",
+        "X-Secret-Key": proxyReq.getHeader("X-Secret-Key") || "MISSING"
+      });
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      console.log("📤 NPF Response:", {
+        statusCode: proxyRes.statusCode,
+        statusMessage: proxyRes.statusMessage,
+        headers: proxyRes.headers
+      });
+
+      // If it's an error response, log the body
+      if (proxyRes.statusCode >= 400) {
+        let body = '';
+        proxyRes.on('data', (chunk) => {
+          body += chunk;
+        });
+        proxyRes.on('end', () => {
+          console.log("❌ NPF Error Response Body:", body);
+        });
+      }
     },
     onError: (err, _req, res) => {
       console.error("❌ Proxy error:", err?.message || err);
@@ -179,5 +274,11 @@ async function logPublicIP() {
 
 app.listen(PORT, async () => {
   console.log(`🚀 Proxy listening on :${PORT} → ${TARGET_ORIGIN}`);
+  console.log(`🔑 PROXY_KEY: ${PROXY_KEY ? "***set***" : "missing"}`);
+  console.log(`🔑 NPF_ACCESS_KEY: ${process.env.NPF_ACCESS_KEY ? "***set***" : "missing"}`);
+  console.log(`🔑 NPF_SECRET_KEY: ${process.env.NPF_SECRET_KEY ? "***set***" : "missing"}`);
   await logPublicIP();
 });
+
+
+ 
